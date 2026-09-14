@@ -18,17 +18,19 @@ jobs:
         with:
           node-version: '22'
 
-      - name: backend install, lint, test
+      - name: backend install, lint, build, test
         working-directory: ./backend
         run: |
           npm ci
           npm run lint
+          npm run build
           npm run test
           npm run test:bdd
 
-      - name: frontend install, lint, test
+      - name: frontend install, lint, build, test
         working-directory: ./frontend
         run: |
           npm ci
           npm run lint
+          npm run build
           npm run test
