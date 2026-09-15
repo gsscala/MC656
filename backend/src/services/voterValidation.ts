@@ -1,10 +1,10 @@
+import type { ElectionType } from '../models/election';
+
 export interface Voter {
   id: string;
   credentials: string;
   status?: string;
 }
-
-export type ElectionType = 'centro-academico' | 'assembleia-condominio' | 'orcamento-municipal';
 
 export interface ElectionContext {
   type: ElectionType;
