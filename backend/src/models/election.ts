@@ -39,26 +39,26 @@ export class Election {
   constructor(config: ElectionConfig) {
     const title = config.title.trim();
     if (!title) {
-      throw new ElectionValidationError('Election title is required');
+      throw new ElectionValidationError('O título da eleição é obrigatório');
     }
 
     if (!ELECTION_TYPES.includes(config.type)) {
-      throw new ElectionValidationError(`Unsupported election type: ${String(config.type)}`);
+      throw new ElectionValidationError(`Tipo de eleição não suportado: ${String(config.type)}`);
     }
 
     const startTimestamp = config.startDate.getTime();
     const endTimestamp = config.endDate.getTime();
 
     if (!Number.isFinite(startTimestamp) || !Number.isFinite(endTimestamp)) {
-      throw new ElectionValidationError('Election dates must be valid');
+      throw new ElectionValidationError('As datas da eleição devem ser válidas');
     }
 
     if (endTimestamp < startTimestamp) {
-      throw new ElectionValidationError('Election end date cannot be before its start date');
+      throw new ElectionValidationError('A data de término não pode ser anterior à data de início');
     }
 
     if (config.options.length < 2) {
-      throw new ElectionValidationError('Election must have at least two options');
+      throw new ElectionValidationError('A eleição deve ter no mínimo duas opções');
     }
 
     const optionIds = new Set<string>();
@@ -67,11 +67,11 @@ export class Election {
       const optionTitle = option.title.trim();
 
       if (!id || !optionTitle) {
-        throw new ElectionValidationError('Election options require an id and title');
+        throw new ElectionValidationError('Cada opção deve ter um identificador e um título');
       }
 
       if (optionIds.has(id)) {
-        throw new ElectionValidationError(`Election option id must be unique: ${id}`);
+        throw new ElectionValidationError(`O identificador da opção deve ser único: ${id}`);
       }
 
       optionIds.add(id);
@@ -88,7 +88,7 @@ export class Election {
   statusAt(date: Date): ElectionStatus {
     const timestamp = date.getTime();
     if (!Number.isFinite(timestamp)) {
-      throw new ElectionValidationError('Status date must be valid');
+      throw new ElectionValidationError('A data informada deve ser válida');
     }
 
     if (timestamp < this.startTimestamp) {

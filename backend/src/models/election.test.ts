@@ -32,7 +32,7 @@ describe('Election', () => {
 
   it('rejects a blank title', () => {
     expect(() => new Election({ ...validConfig, title: '   ' })).toThrow(
-      new ElectionValidationError('Election title is required'),
+      new ElectionValidationError('O título da eleição é obrigatório'),
     );
   });
 
@@ -40,7 +40,7 @@ describe('Election', () => {
     const unsupportedType = 'private-poll' as ElectionConfig['type'];
 
     expect(() => new Election({ ...validConfig, type: unsupportedType })).toThrow(
-      new ElectionValidationError('Unsupported election type: private-poll'),
+      new ElectionValidationError('Tipo de eleição não suportado: private-poll'),
     );
   });
 
@@ -52,19 +52,19 @@ describe('Election', () => {
           startDate: new Date('2026-10-03T12:00:00.000Z'),
           endDate: new Date('2026-10-02T12:00:00.000Z'),
         }),
-    ).toThrow(new ElectionValidationError('Election end date cannot be before its start date'));
+    ).toThrow(new ElectionValidationError('A data de término não pode ser anterior à data de início'));
   });
 
   it('rejects invalid dates instead of accepting an unordered election', () => {
     expect(
       () => new Election({ ...validConfig, endDate: new Date('invalid') }),
-    ).toThrow(new ElectionValidationError('Election dates must be valid'));
+    ).toThrow(new ElectionValidationError('As datas da eleição devem ser válidas'));
   });
 
   it('requires at least two voting options', () => {
     expect(
       () => new Election({ ...validConfig, options: [{ id: 'only', title: 'Only option' }] }),
-    ).toThrow(new ElectionValidationError('Election must have at least two options'));
+    ).toThrow(new ElectionValidationError('A eleição deve ter no mínimo duas opções'));
   });
 
   it('requires every option to have an identifier and title', () => {
@@ -77,7 +77,7 @@ describe('Election', () => {
             { id: 'slate-b', title: 'Slate B' },
           ],
         }),
-    ).toThrow(new ElectionValidationError('Election options require an id and title'));
+    ).toThrow(new ElectionValidationError('Cada opção deve ter um identificador e um título'));
   });
 
   it('rejects duplicate option identifiers', () => {
@@ -90,7 +90,7 @@ describe('Election', () => {
             { id: 'same-id', title: 'Slate B' },
           ],
         }),
-    ).toThrow(new ElectionValidationError('Election option id must be unique: same-id'));
+    ).toThrow(new ElectionValidationError('O identificador da opção deve ser único: same-id'));
   });
 
   it('reports scheduled, open, and closed across lifecycle boundaries', () => {
@@ -106,7 +106,7 @@ describe('Election', () => {
     const election = new Election(validConfig);
 
     expect(() => election.statusAt(new Date('invalid'))).toThrow(
-      new ElectionValidationError('Status date must be valid'),
+      new ElectionValidationError('A data informada deve ser válida'),
     );
   });
 });
