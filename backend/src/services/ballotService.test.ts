@@ -3,6 +3,9 @@ import {
   DuplicateVoteError,
   InvalidVoteError,
   Vote,
+  BallotObserver,
+  AuditLogObserver,
+  TurnoutCounterObserver,
 } from './ballotService';
 
 describe('BallotService', () => {
@@ -165,6 +168,125 @@ describe('BallotService', () => {
       expect(service.hasVoted('election-1', 'voter-1')).toBe(false);
 
       expect(() => service.submitVote(vote)).not.toThrow();
+    });
+  });
+
+  describe('Observer Pattern', () => {
+    it('should notify an attached observer when a vote is submitted', () => {
+      const mockObserver: BallotObserver = {
+        onVoteSubmitted: jest.fn(),
+      };
+
+      service.addObserver(mockObserver);
+
+      const vote: Vote = {
+        voterId: 'voter-obs-1',
+        electionId: 'election-obs-1',
+        optionId: 'option-obs-1',
+      };
+
+      const receipt = service.submitVote(vote);
+
+      expect(mockObserver.onVoteSubmitted).toHaveBeenCalledTimes(1);
+      expect(mockObserver.onVoteSubmitted).toHaveBeenCalledWith(receipt);
+    });
+
+    it('should notify multiple observers when a vote is submitted', () => {
+      const observerA: BallotObserver = { onVoteSubmitted: jest.fn() };
+      const observerB: BallotObserver = { onVoteSubmitted: jest.fn() };
+
+      service.addObserver(observerA);
+      service.addObserver(observerB);
+
+      const vote: Vote = {
+        voterId: 'voter-multi',
+        electionId: 'election-multi',
+        optionId: 'option-1',
+      };
+
+      const receipt = service.submitVote(vote);
+
+      expect(observerA.onVoteSubmitted).toHaveBeenCalledWith(receipt);
+      expect(observerB.onVoteSubmitted).toHaveBeenCalledWith(receipt);
+    });
+
+    it('should allow removing an observer so it receives no further notifications', () => {
+      const observer: BallotObserver = { onVoteSubmitted: jest.fn() };
+
+      service.addObserver(observer);
+      service.removeObserver(observer);
+
+      service.submitVote({
+        voterId: 'voter-rem',
+        electionId: 'election-rem',
+        optionId: 'option-1',
+      });
+
+      expect(observer.onVoteSubmitted).not.toHaveBeenCalled();
+    });
+
+    it('should ignore removal of an observer that is not registered', () => {
+      const registered: BallotObserver = { onVoteSubmitted: jest.fn() };
+      const unregistered: BallotObserver = { onVoteSubmitted: jest.fn() };
+
+      service.addObserver(registered);
+      expect(() => service.removeObserver(unregistered)).not.toThrow();
+
+      service.submitVote({
+        voterId: 'voter-unreg',
+        electionId: 'election-unreg',
+        optionId: 'option-1',
+      });
+
+      expect(registered.onVoteSubmitted).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw an error when adding a falsy observer', () => {
+      // @ts-expect-error testing invalid argument
+      expect(() => service.addObserver(null)).toThrow('Observador invalido');
+    });
+
+    it('should clear all observers when clearObservers is called', () => {
+      const observer: BallotObserver = { onVoteSubmitted: jest.fn() };
+
+      service.addObserver(observer);
+      service.clearObservers();
+
+      service.submitVote({
+        voterId: 'voter-clear',
+        electionId: 'election-clear',
+        optionId: 'option-1',
+      });
+
+      expect(observer.onVoteSubmitted).not.toHaveBeenCalled();
+    });
+
+    it('should correctly accumulate audit receipts with AuditLogObserver', () => {
+      const auditLog = new AuditLogObserver();
+      service.addObserver(auditLog);
+
+      const vote1: Vote = { voterId: 'v-1', electionId: 'elec-audit', optionId: 'opt-1' };
+      const vote2: Vote = { voterId: 'v-2', electionId: 'elec-audit', optionId: 'opt-2' };
+
+      const r1 = service.submitVote(vote1);
+      const r2 = service.submitVote(vote2);
+
+      expect(auditLog.logs).toHaveLength(2);
+      expect(auditLog.logs[0]).toEqual(r1);
+      expect(auditLog.logs[1]).toEqual(r2);
+    });
+
+    it('should correctly track voter turnout counts with TurnoutCounterObserver', () => {
+      const turnout = new TurnoutCounterObserver();
+      service.addObserver(turnout);
+
+      service.submitVote({ voterId: 'v-1', electionId: 'elec-turnout-A', optionId: 'opt-1' });
+      service.submitVote({ voterId: 'v-2', electionId: 'elec-turnout-A', optionId: 'opt-2' });
+      service.submitVote({ voterId: 'v-3', electionId: 'elec-turnout-B', optionId: 'opt-1' });
+
+      expect(turnout.getCount('elec-turnout-A')).toBe(2);
+      expect(turnout.getCount('elec-turnout-B')).toBe(1);
+      expect(turnout.getCount('elec-turnout-C')).toBe(0);
     });
   });
 
