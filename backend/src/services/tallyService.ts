@@ -51,6 +51,36 @@ export class TallyError extends Error {
 
 const EPSILON = 1e-9;
 
+/** Monta os resultados por opção, ordenados do mais votado ao menos votado. */
+function buildOptionResults(
+  weightedByOption: Map<string, number>,
+  totalWeightedVotes: number
+): OptionResult[] {
+  return Array.from(weightedByOption.entries())
+    .map(([optionId, totalWV]) => ({
+      optionId,
+      totalWeightedVotes: totalWV,
+      percentage: totalWeightedVotes > 0
+        ? Math.round((totalWV / totalWeightedVotes) * 10000) / 100
+        : 0,
+    }))
+    .sort((a, b) => b.totalWeightedVotes - a.totalWeightedVotes);
+}
+
+/** Determina os vencedores (pode haver empate — comparação com tolerância para floats). */
+function determineWinners(
+  results: readonly OptionResult[],
+  epsilon: number
+): readonly string[] {
+  const maxVotes = results.length > 0 ? results[0]!.totalWeightedVotes : 0;
+  if (maxVotes <= 0) {
+    return [];
+  }
+  return results
+    .filter((r) => Math.abs(r.totalWeightedVotes - maxVotes) < epsilon)
+    .map((r) => r.optionId);
+}
+
 /**
  * Apura os votos de uma eleição, aplicando pesos quando necessário,
  * calculando a participação e verificando o quórum.
@@ -93,22 +123,8 @@ export function tallyVotes(votes: readonly Vote[], config: TallyConfig): TallyRe
     totalWeightedVotes += weight;
   }
 
-  // Montar resultados por opção, ordenados do mais votado ao menos votado
-  const results: OptionResult[] = Array.from(weightedByOption.entries())
-    .map(([optionId, totalWV]) => ({
-      optionId,
-      totalWeightedVotes: totalWV,
-      percentage: totalWeightedVotes > 0
-        ? Math.round((totalWV / totalWeightedVotes) * 10000) / 100
-        : 0,
-    }))
-    .sort((a, b) => b.totalWeightedVotes - a.totalWeightedVotes);
-
-  // Determinar vencedores (pode haver empate — comparação com tolerância para floats)
-  const maxVotes = results.length > 0 ? results[0]!.totalWeightedVotes : 0;
-  const winners = results
-    .filter((r) => Math.abs(r.totalWeightedVotes - maxVotes) < EPSILON && maxVotes > 0)
-    .map((r) => r.optionId);
+  const results = buildOptionResults(weightedByOption, totalWeightedVotes);
+  const winners = determineWinners(results, EPSILON);
 
   // Calcular taxa de participação e quórum
   const participationRate =
