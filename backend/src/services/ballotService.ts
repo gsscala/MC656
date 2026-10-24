@@ -27,11 +27,62 @@ export class InvalidVoteError extends Error {
   }
 }
 
+export interface BallotObserver {
+  onVoteSubmitted(receipt: BallotReceipt): void;
+}
+
+export class AuditLogObserver implements BallotObserver {
+  readonly logs: BallotReceipt[] = [];
+
+  onVoteSubmitted(receipt: BallotReceipt): void {
+    this.logs.push(receipt);
+  }
+}
+
+export class TurnoutCounterObserver implements BallotObserver {
+  private readonly counts = new Map<string, number>();
+
+  onVoteSubmitted(receipt: BallotReceipt): void {
+    const current = this.counts.get(receipt.electionId) ?? 0;
+    this.counts.set(receipt.electionId, current + 1);
+  }
+
+  getCount(electionId: string): number {
+    return this.counts.get(electionId) ?? 0;
+  }
+}
+
 export class BallotService {
   private readonly votedRecords: Set<string>;
+  private readonly observers: BallotObserver[];
 
   constructor() {
     this.votedRecords = new Set<string>();
+    this.observers = [];
+  }
+
+  addObserver(observer: BallotObserver): void {
+    if (!observer) {
+      throw new Error('Observador invalido');
+    }
+    this.observers.push(observer);
+  }
+
+  removeObserver(observer: BallotObserver): void {
+    const index = this.observers.indexOf(observer);
+    if (index >= 0) {
+      this.observers.splice(index, 1);
+    }
+  }
+
+  clearObservers(): void {
+    this.observers.length = 0;
+  }
+
+  private notifyObservers(receipt: BallotReceipt): void {
+    for (const observer of this.observers) {
+      observer.onVoteSubmitted(receipt);
+    }
   }
 
   private getRecordKey(electionId: string, voterId: string): string {
@@ -74,12 +125,16 @@ export class BallotService {
 
     this.votedRecords.add(this.getRecordKey(electionId, voterId));
 
-    return {
+    const receipt: BallotReceipt = {
       receiptHash,
       timestamp,
       electionId,
       voterId,
     };
+
+    this.notifyObservers(receipt);
+
+    return receipt;
   }
 
   reset(): void {

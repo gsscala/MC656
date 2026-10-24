@@ -1,4 +1,12 @@
-import { validateVoterEligibility, Voter, ElectionContext } from './voterValidation';
+import {
+  validateVoterEligibility,
+  Voter,
+  ElectionContext,
+  AcademicCenterValidationStrategy,
+  CondoAssemblyValidationStrategy,
+  MunicipalBudgetValidationStrategy,
+  validationStrategies,
+} from './voterValidation';
 
 describe('Voter Validation Service', () => {
   const activeStudent: Voter = { id: 'v1', credentials: '123456', status: 'active' };
@@ -86,6 +94,73 @@ describe('Voter Validation Service', () => {
       const result = validateVoterEligibility(activeStudent, unknownContext);
       expect(result.eligible).toBe(false);
       expect(result.reason).toBe('Tipo de eleição não reconhecido');
+    });
+  });
+
+  describe('Strategy Pattern classes (isolated)', () => {
+    it('AcademicCenterValidationStrategy validates default 6-digit RA and custom format', () => {
+      const strategy = new AcademicCenterValidationStrategy();
+      const baseContext: ElectionContext = { type: 'centro-academico' };
+
+      expect(strategy.validate({ id: 'v1', credentials: '123456' }, baseContext)).toEqual({
+        eligible: true,
+      });
+      expect(strategy.validate({ id: 'v1', credentials: '12345' }, baseContext)).toEqual({
+        eligible: false,
+        reason: 'RA invalido, precisa ter 6 digitos, todos numericos',
+      });
+
+      const customContext: ElectionContext = {
+        type: 'centro-academico',
+        requiredCredentialsFormat: /^RA-\d{4}$/,
+      };
+      expect(strategy.validate({ id: 'v1', credentials: 'RA-2026' }, customContext)).toEqual({
+        eligible: true,
+      });
+    });
+
+    it('CondoAssemblyValidationStrategy validates default 11-digit CPF and custom format', () => {
+      const strategy = new CondoAssemblyValidationStrategy();
+      const baseContext: ElectionContext = { type: 'assembleia-condominio' };
+
+      expect(strategy.validate({ id: 'v2', credentials: '12345678901' }, baseContext)).toEqual({
+        eligible: true,
+      });
+      expect(strategy.validate({ id: 'v2', credentials: '123' }, baseContext)).toEqual({
+        eligible: false,
+        reason: 'CPF invalido, precisa ter 11 digitos, todos numericos',
+      });
+
+      const customContext: ElectionContext = {
+        type: 'assembleia-condominio',
+        requiredCredentialsFormat: /^APT-\d{3}$/,
+      };
+      expect(strategy.validate({ id: 'v2', credentials: 'APT-101' }, customContext)).toEqual({
+        eligible: true,
+      });
+    });
+
+    it('MunicipalBudgetValidationStrategy rejects blank strings and accepts non-empty credentials', () => {
+      const strategy = new MunicipalBudgetValidationStrategy();
+      expect(strategy.validate({ id: 'v3', credentials: 'mun-01' })).toEqual({
+        eligible: true,
+      });
+      expect(strategy.validate({ id: 'v3', credentials: '   ' })).toEqual({
+        eligible: false,
+        reason: 'credencial nao pode ser vazia',
+      });
+    });
+
+    it('validationStrategies maps each ElectionType to its concrete strategy instance', () => {
+      expect(validationStrategies['centro-academico']).toBeInstanceOf(
+        AcademicCenterValidationStrategy,
+      );
+      expect(validationStrategies['assembleia-condominio']).toBeInstanceOf(
+        CondoAssemblyValidationStrategy,
+      );
+      expect(validationStrategies['orcamento-municipal']).toBeInstanceOf(
+        MunicipalBudgetValidationStrategy,
+      );
     });
   });
 });
