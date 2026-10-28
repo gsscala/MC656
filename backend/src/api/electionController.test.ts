@@ -3,6 +3,8 @@ import { createApp } from './app';
 import { ElectionController } from './electionController';
 import { InvalidVoteError } from '../services/ballotService';
 import * as tallyModule from '../services/tallyService';
+import * as electionModelModule from '../models/election';
+import * as voterValidationModule from '../services/voterValidation';
 
 describe('ElectionController - Suíte de Testes Estruturais (Critério C3)', () => {
   let controller: ElectionController;
@@ -25,6 +27,10 @@ describe('ElectionController - Suíte de Testes Estruturais (Critério C3)', () 
   beforeEach(() => {
     controller = new ElectionController();
     app = createApp(controller);
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
   });
 
   describe('createApp Factory', () => {
@@ -154,6 +160,22 @@ describe('ElectionController - Suíte de Testes Estruturais (Critério C3)', () 
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('A data de término não pode ser anterior à data de início');
     });
+
+    it('deve retornar 400 com mensagem genérica se erro de criação não for ElectionValidationError', async () => {
+      jest.spyOn(electionModelModule, 'Election').mockImplementationOnce(() => {
+        throw new Error('Falha genérica de instanciação');
+      });
+
+      const res = await request(app)
+        .post('/api/elections')
+        .send({
+          ...validElectionPayload,
+          id: 'eleicao-erro-generico',
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Erro ao validar configuração da eleição');
+    });
   });
 
   describe('GET /api/elections/:id (Consulta de Eleição)', () => {
@@ -172,6 +194,17 @@ describe('ElectionController - Suíte de Testes Estruturais (Critério C3)', () 
 
       expect(res.status).toBe(404);
       expect(res.body.error).toContain('não encontrada');
+    });
+
+    it('deve retornar 404 quando o parâmetro id não for informado', () => {
+      const mockReq = { params: {} } as unknown as Parameters<typeof controller.getElection>[0];
+      const mockRes = {
+        status: jest.fn().mockReturnThis(),
+        json: jest.fn(),
+      } as unknown as Parameters<typeof controller.getElection>[1];
+
+      controller.getElection(mockReq, mockRes);
+      expect(mockRes.status).toHaveBeenCalledWith(404);
     });
   });
 
@@ -343,6 +376,51 @@ describe('ElectionController - Suíte de Testes Estruturais (Critério C3)', () 
       expect(res.body.error).toContain('Erro de voto invalido simulado');
     });
 
+    it('deve usar string vazia caso credentials não seja string', async () => {
+      const res = await request(app)
+        .post('/api/elections/eleicao-ca-2026/votes')
+        .send({
+          voterId: 'aluno-sem-cred',
+          credentials: 12345, // tipo numérico inválido para credentials
+          optionId: 'chapa-a',
+        });
+
+      expect(res.status).toBe(403);
+    });
+
+    it('deve usar mensagem padrão se motivo de inelegibilidade for omitido', async () => {
+      jest.spyOn(voterValidationModule, 'validateVoterEligibility').mockReturnValueOnce({
+        eligible: false,
+        reason: undefined,
+      });
+
+      const res = await request(app)
+        .post('/api/elections/eleicao-ca-2026/votes')
+        .send({
+          voterId: 'aluno-sem-motivo',
+          credentials: '123456',
+          optionId: 'chapa-a',
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('Eleitor não elegível para votar nesta eleição');
+    });
+
+    it('deve tratar fallback quando lista de votos da eleição for nula ao votar', async () => {
+      const internalCtrl = controller as unknown as { votesByElection: Map<string, unknown> };
+      internalCtrl.votesByElection.delete('eleicao-ca-2026');
+
+      const res = await request(app)
+        .post('/api/elections/eleicao-ca-2026/votes')
+        .send({
+          voterId: 'aluno-novo-voto',
+          credentials: '123456',
+          optionId: 'chapa-a',
+        });
+
+      expect(res.status).toBe(201);
+    });
+
     it('deve retornar 500 se o BallotService lançar um erro inesperado', async () => {
       const internalCtrl = controller as unknown as { ballotService: { submitVote: () => never } };
       jest.spyOn(internalCtrl.ballotService, 'submitVote').mockImplementationOnce(() => {
@@ -410,15 +488,48 @@ describe('ElectionController - Suíte de Testes Estruturais (Critério C3)', () 
       expect(res.body.tally.totalVotes).toBe(0);
     });
 
-    it('deve retornar 400 se ocorrer um erro durante o processamento da apuracao', async () => {
+    it('deve retornar 400 se ocorrer um erro do tipo Error na apuração', async () => {
       jest.spyOn(tallyModule, 'tallyVotes').mockImplementationOnce(() => {
-        throw new tallyModule.TallyError('Erro forcado no motor de apuracao');
+        throw new tallyModule.TallyError('Erro forçado do tipo Error');
       });
 
       const res = await request(app).get('/api/elections/eleicao-ca-2026/tally?force=true');
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toContain('Erro forcado no motor de apuracao');
+      expect(res.body.error).toBe('Erro forçado do tipo Error');
+    });
+
+    it('deve retornar 400 se ocorrer um erro não convencional (não-Error) na apuração', async () => {
+      jest.spyOn(tallyModule, 'tallyVotes').mockImplementationOnce(() => {
+        throw 'Erro primitivo em formato string';
+      });
+
+      const res = await request(app).get('/api/elections/eleicao-ca-2026/tally?force=true');
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Erro na apuração');
+    });
+
+    it('deve realizar apuração em eleição sem quorumFraction configurado', async () => {
+      // Cria eleição sem quorumFraction
+      await request(app).post('/api/elections').send({
+        ...validElectionPayload,
+        id: 'eleicao-sem-quorum',
+        quorumFraction: undefined,
+      });
+
+      const res = await request(app).get('/api/elections/eleicao-sem-quorum/tally?force=true');
+      expect(res.status).toBe(200);
+      expect(res.body.tally.quorumReached).toBe(true);
+    });
+
+    it('deve tratar fallback quando o mapa interno de votos da eleição for nulo', async () => {
+      const internalCtrl = controller as unknown as { votesByElection: Map<string, unknown> };
+      internalCtrl.votesByElection.delete('eleicao-ca-2026');
+
+      const res = await request(app).get('/api/elections/eleicao-ca-2026/tally?force=true');
+      expect(res.status).toBe(200);
+      expect(res.body.tally.totalVotes).toBe(0);
     });
   });
 
