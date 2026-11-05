@@ -1,9 +1,11 @@
 import { createHash } from 'crypto';
+import type { Election } from '../models/election';
 
 export interface Vote {
   voterId: string;
   electionId: string;
   optionId: string;
+  timestamp?: Date;
 }
 
 export interface BallotReceipt {
@@ -25,6 +27,36 @@ export class InvalidVoteError extends Error {
     super(message);
     this.name = 'InvalidVoteError';
   }
+}
+
+export class ElectionNotStartedError extends Error {
+  constructor(message = 'A eleição ainda não foi iniciada') {
+    super(message);
+    this.name = 'ElectionNotStartedError';
+  }
+}
+
+export class ElectionEndedError extends Error {
+  constructor(message = 'A eleição já foi encerrada') {
+    super(message);
+    this.name = 'ElectionEndedError';
+  }
+}
+
+export interface ElectionOptionLike {
+  readonly id: string;
+  readonly title?: string;
+}
+
+export interface ElectionLike {
+  readonly startDate: Date;
+  readonly endDate: Date;
+  readonly options: readonly ElectionOptionLike[];
+}
+
+export interface BallotValidationContext {
+  election?: Election | ElectionLike;
+  currentTime?: Date;
 }
 
 export interface BallotObserver {
@@ -55,10 +87,29 @@ export class TurnoutCounterObserver implements BallotObserver {
 export class BallotService {
   private readonly votedRecords: Set<string>;
   private readonly observers: BallotObserver[];
+  private readonly registeredElections: Map<string, Election | ElectionLike>;
 
   constructor() {
     this.votedRecords = new Set<string>();
     this.observers = [];
+    this.registeredElections = new Map<string, Election | ElectionLike>();
+  }
+
+  registerElection(electionId: string, election: Election | ElectionLike): void {
+    if (!electionId || !electionId.trim()) {
+      throw new Error('Identificador da eleição é obrigatório para registro');
+    }
+    if (!election) {
+      throw new Error('Objeto da eleição é obrigatório para registro');
+    }
+    this.registeredElections.set(electionId.trim(), election);
+  }
+
+  getElection(electionId: string): Election | ElectionLike | undefined {
+    if (!electionId) {
+      return undefined;
+    }
+    return this.registeredElections.get(electionId.trim());
   }
 
   addObserver(observer: BallotObserver): void {
@@ -96,7 +147,7 @@ export class BallotService {
     return this.votedRecords.has(this.getRecordKey(electionId.trim(), voterId.trim()));
   }
 
-  submitVote(vote: Vote): BallotReceipt {
+  submitVote(vote: Vote, context?: BallotValidationContext): BallotReceipt {
     if (!vote) {
       throw new InvalidVoteError('Dados do voto não foram informados');
     }
@@ -115,11 +166,33 @@ export class BallotService {
       throw new InvalidVoteError('Identificador da opção de voto (optionId) é obrigatório');
     }
 
+    const election = context?.election ?? this.registeredElections.get(electionId);
+    if (!election && this.registeredElections.size > 0 && !context?.election) {
+      throw new InvalidVoteError(`Eleição '${electionId}' não encontrada no sistema`);
+    }
+
+    const voteTime = vote.timestamp ?? context?.currentTime ?? new Date();
+
+    if (election) {
+      const optionExists = election.options.some((opt) => opt.id === optionId);
+      if (!optionExists) {
+        throw new InvalidVoteError(`Opção de voto '${optionId}' não cadastrada para esta eleição`);
+      }
+
+      const voteTimestamp = voteTime.getTime();
+      if (voteTimestamp < election.startDate.getTime()) {
+        throw new ElectionNotStartedError('A eleição ainda não foi iniciada');
+      }
+      if (voteTimestamp > election.endDate.getTime()) {
+        throw new ElectionEndedError('A eleição já foi encerrada');
+      }
+    }
+
     if (this.hasVoted(electionId, voterId)) {
       throw new DuplicateVoteError(`Eleitor '${voterId}' já votou na eleição '${electionId}'`);
     }
 
-    const timestamp = new Date();
+    const timestamp = voteTime;
     const hashPayload = `${electionId}:${voterId}:${optionId}:${timestamp.getTime()}`;
     const receiptHash = createHash('sha256').update(hashPayload).digest('hex');
 
@@ -139,5 +212,6 @@ export class BallotService {
 
   reset(): void {
     this.votedRecords.clear();
+    this.registeredElections.clear();
   }
 }
