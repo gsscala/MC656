@@ -356,6 +356,22 @@ describe('Tally Service', () => {
     });
   });
 
+  describe('Tie-break tolerance (epsilon)', () => {
+    it('should not declare a co-winner when the runner-up is exactly epsilon behind the leader', () => {
+      // 2e-9 - 1e-9 === 1e-9 exatamente em IEEE 754, entao a segunda colocada
+      // fica exatamente sobre o limiar de desempate. Diferenca estritamente
+      // menor que epsilon significa empate, igualdade significa derrota.
+      const votes: Vote[] = [
+        { voterId: 'v1', optionId: 'opt-leader', weight: 2e-9 },
+        { voterId: 'v2', optionId: 'opt-runner-up', weight: 1e-9 },
+      ];
+
+      const result = tallyVotes(votes, simpleConfig);
+
+      expect(result.winners).toEqual(['opt-leader']);
+    });
+  });
+
   describe('Percentage calculation', () => {
     it('should round percentages to 2 decimal places', () => {
       const votes: Vote[] = [
