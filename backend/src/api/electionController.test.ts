@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { createApp } from './app';
 import { ElectionController } from './electionController';
+import { seedDemoElections } from './seed';
 import { InvalidVoteError } from '../services/ballotService';
 import * as tallyModule from '../services/tallyService';
 import * as electionModelModule from '../models/election';
@@ -588,9 +589,112 @@ describe('ElectionController - Suíte de Testes Estruturais (Critério C3)', () 
     });
   });
 
-  describe('controller.reset()', () => {
-    it('deve limpar todas as eleições e votos armazenados', async () => {
+  describe('GET /api/elections (Listagem de Eleições)', () => {
+    it('deve retornar lista vazia quando nenhuma eleição foi cadastrada', async () => {
+      const res = await request(app).get('/api/elections');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual([]);
+    });
+
+    it('deve listar eleições cadastradas com contagem de comparecimento dos observadores', async () => {
       await request(app).post('/api/elections').send(validElectionPayload);
+      await request(app).post('/api/elections/eleicao-ca-2026/votes').send({
+        voterId: 'aluno-lista-1',
+        credentials: '123456',
+        optionId: 'chapa-a',
+      });
+
+      const res = await request(app).get('/api/elections');
+
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveLength(1);
+      expect(res.body[0]).toMatchObject({
+        id: 'eleicao-ca-2026',
+        title: validElectionPayload.title,
+        totalEligibleVoters: 200,
+        quorumFraction: 0.25,
+        turnoutCount: 1,
+      });
+    });
+  });
+
+  describe('GET /api/elections/:id/audit (Log de Auditoria e TurnoutCounterObserver)', () => {
+    it('deve retornar 404 se a eleição não existir', async () => {
+      const res = await request(app).get('/api/elections/inexistente/audit');
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toContain('não encontrada');
+    });
+
+    it('deve retornar o contador de comparecimento e os recibos auditáveis sem expor a opção votada', async () => {
+      await request(app).post('/api/elections').send(validElectionPayload);
+      await request(app).post('/api/elections').send({
+        ...validElectionPayload,
+        id: 'eleicao-secundaria',
+      });
+
+      await request(app).post('/api/elections/eleicao-ca-2026/votes').send({
+        voterId: 'aluno-audit-1',
+        credentials: '123456',
+        optionId: 'chapa-a',
+      });
+      await request(app).post('/api/elections/eleicao-secundaria/votes').send({
+        voterId: 'aluno-audit-2',
+        credentials: '654321',
+        optionId: 'chapa-b',
+      });
+
+      const res = await request(app).get('/api/elections/eleicao-ca-2026/audit');
+
+      expect(res.status).toBe(200);
+      expect(res.body.electionId).toBe('eleicao-ca-2026');
+      expect(res.body.turnoutCount).toBe(1);
+      expect(res.body.totalEligibleVoters).toBe(200);
+      expect(res.body.auditLogs).toHaveLength(1);
+      expect(res.body.auditLogs[0].voterId).toBe('aluno-audit-1');
+      expect(res.body.auditLogs[0].receiptHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(res.body.auditLogs[0].optionId).toBeUndefined();
+    });
+  });
+
+  describe('CORS Preflight (OPTIONS)', () => {
+    it('deve responder 204 com cabeçalhos CORS em requisições OPTIONS', async () => {
+      const res = await request(app).options('/api/elections');
+
+      expect(res.status).toBe(204);
+      expect(res.headers['access-control-allow-origin']).toBe('*');
+      expect(res.headers['access-control-allow-methods']).toContain('GET');
+    });
+  });
+
+  describe('seedDemoElections', () => {
+    it('deve popular os três cenários institucionais e votos iniciais de demonstração', async () => {
+      seedDemoElections(controller);
+
+      const listRes = await request(app).get('/api/elections');
+      expect(listRes.status).toBe(200);
+      expect(listRes.body).toHaveLength(3);
+      expect(listRes.body.map((e: { id: string }) => e.id)).toEqual([
+        'ca-computacao-2026',
+        'condominio-solar-2026',
+        'orcamento-campinas-2026',
+      ]);
+
+      const tallyRes = await request(app).get('/api/elections/condominio-solar-2026/tally?force=true');
+      expect(tallyRes.status).toBe(200);
+      expect(tallyRes.body.tally.winners).toEqual(['reforma-fachada']);
+    });
+  });
+
+  describe('controller.reset()', () => {
+    it('deve limpar todas as eleições, votos e contadores armazenados', async () => {
+      await request(app).post('/api/elections').send(validElectionPayload);
+      await request(app).post('/api/elections/eleicao-ca-2026/votes').send({
+        voterId: 'aluno-reset',
+        credentials: '123456',
+        optionId: 'chapa-a',
+      });
       controller.reset();
 
       const res = await request(app).get('/api/elections/eleicao-ca-2026');

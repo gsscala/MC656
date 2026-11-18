@@ -1,75 +1,20 @@
-# React + TypeScript + Vite
+# Frontend do sistema de votação eletrônica auditável
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Aplicação React + TypeScript + Vite que consome a API REST do diretório `backend/` via proxy configurado em `vite.config.ts` (`/api` para `http://localhost:3001`).
 
-Currently, two official plugins are available:
+## Funcionalidades implementadas em `src/App.tsx`
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- Seleção de eleições entre os três cenários institucionais (`centro-academico`, `assembleia-condominio` e `orcamento-municipal`) e criação de novas eleições.
+- Cabine de votação com indicação da estratégia de validação ativa, seleção de status do eleitor (`active` ou `blocked`), peso do voto e exibição do hash SHA-256 do recibo gerado.
+- Painel de apuração ponderada com total nominal, soma ponderada, percentual por opção, taxa de participação e indicador de quórum.
+- Aba de auditoria com verificador individual de recibo (`GET /api/elections/:id/receipts/:hash`) e visualização do `TurnoutCounterObserver` e do `AuditLogObserver`.
 
-## React Compiler
+## Comandos disponíveis
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
-
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm ci        # Instalar dependências
+npm run dev   # Iniciar servidor de desenvolvimento em http://localhost:5173
+npm run lint  # Executar ESLint
+npm run build # Verificar tipos (tsc -b) e gerar bundle em dist/
+npm test      # Executar suíte Jest + React Testing Library com cobertura
 ```

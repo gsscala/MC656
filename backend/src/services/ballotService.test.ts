@@ -287,6 +287,10 @@ describe('BallotService', () => {
       expect(turnout.getCount('elec-turnout-A')).toBe(2);
       expect(turnout.getCount('elec-turnout-B')).toBe(1);
       expect(turnout.getCount('elec-turnout-C')).toBe(0);
+
+      turnout.reset();
+      expect(turnout.getCount('elec-turnout-A')).toBe(0);
+      expect(turnout.getCount('elec-turnout-B')).toBe(0);
     });
   });
 
