@@ -82,6 +82,10 @@ export class TurnoutCounterObserver implements BallotObserver {
   getCount(electionId: string): number {
     return this.counts.get(electionId) ?? 0;
   }
+
+  reset(): void {
+    this.counts.clear();
+  }
 }
 
 export class BallotService {

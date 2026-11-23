@@ -10,6 +10,7 @@ import {
   BallotService,
   BallotReceipt,
   AuditLogObserver,
+  TurnoutCounterObserver,
   DuplicateVoteError,
   InvalidVoteError,
 } from '../services/ballotService';
@@ -39,6 +40,7 @@ export class ElectionController {
   private readonly receiptsByHash: Map<string, BallotReceipt>;
   private readonly ballotService: BallotService;
   private readonly auditLog: AuditLogObserver;
+  private readonly turnoutCounter: TurnoutCounterObserver;
 
   constructor() {
     this.elections = new Map<string, StoredElection>();
@@ -46,7 +48,9 @@ export class ElectionController {
     this.receiptsByHash = new Map<string, BallotReceipt>();
     this.ballotService = new BallotService();
     this.auditLog = new AuditLogObserver();
+    this.turnoutCounter = new TurnoutCounterObserver();
     this.ballotService.addObserver(this.auditLog);
+    this.ballotService.addObserver(this.turnoutCounter);
   }
 
   reset(): void {
@@ -54,6 +58,23 @@ export class ElectionController {
     this.votesByElection.clear();
     this.receiptsByHash.clear();
     this.auditLog.logs.length = 0;
+    this.ballotService.reset();
+    this.turnoutCounter.reset();
+  }
+
+  private formatElectionSummary(stored: StoredElection) {
+    return {
+      id: stored.id,
+      title: stored.model.title,
+      type: stored.model.type,
+      startDate: stored.model.startDate.toISOString(),
+      endDate: stored.model.endDate.toISOString(),
+      options: stored.model.options,
+      status: stored.model.statusAt(new Date()),
+      totalEligibleVoters: stored.totalEligibleVoters,
+      ...(typeof stored.quorumFraction === 'number' ? { quorumFraction: stored.quorumFraction } : {}),
+      turnoutCount: this.turnoutCounter.getCount(stored.id),
+    };
   }
 
   createElection = (req: Request, res: Response): void => {
@@ -127,19 +148,18 @@ export class ElectionController {
       this.elections.set(electionId, stored);
       this.votesByElection.set(electionId, []);
 
-      res.status(201).json({
-        id: electionId,
-        title: model.title,
-        type: model.type,
-        startDate: model.startDate.toISOString(),
-        endDate: model.endDate.toISOString(),
-        options: model.options,
-        status: model.statusAt(new Date()),
-      });
+      res.status(201).json(this.formatElectionSummary(stored));
     } catch (err: unknown) {
       const message = err instanceof ElectionValidationError ? err.message : 'Erro ao validar configuração da eleição';
       res.status(400).json({ error: message });
     }
+  };
+
+  listElections = (_req: Request, res: Response): void => {
+    const summaries = Array.from(this.elections.values()).map((stored) =>
+      this.formatElectionSummary(stored)
+    );
+    res.status(200).json(summaries);
   };
 
   getElection = (req: Request, res: Response): void => {
@@ -151,15 +171,7 @@ export class ElectionController {
       return;
     }
 
-    res.status(200).json({
-      id: stored.id,
-      title: stored.model.title,
-      type: stored.model.type,
-      startDate: stored.model.startDate.toISOString(),
-      endDate: stored.model.endDate.toISOString(),
-      options: stored.model.options,
-      status: stored.model.statusAt(new Date()),
-    });
+    res.status(200).json(this.formatElectionSummary(stored));
   };
 
   submitVote = (req: Request, res: Response): void => {
@@ -318,6 +330,32 @@ export class ElectionController {
       voterId: receipt.voterId,
       timestamp: receipt.timestamp.toISOString(),
       verified: true,
+    });
+  };
+
+  getAuditLog = (req: Request, res: Response): void => {
+    const id = getParam(req, 'id');
+    const stored = this.elections.get(id);
+
+    if (!stored) {
+      res.status(404).json({ error: `Eleição '${id}' não encontrada` });
+      return;
+    }
+
+    const auditLogs = this.auditLog.logs
+      .filter((entry) => entry.electionId === id)
+      .map((entry) => ({
+        receiptHash: entry.receiptHash,
+        electionId: entry.electionId,
+        voterId: entry.voterId,
+        timestamp: entry.timestamp.toISOString(),
+      }));
+
+    res.status(200).json({
+      electionId: stored.id,
+      turnoutCount: this.turnoutCounter.getCount(stored.id),
+      totalEligibleVoters: stored.totalEligibleVoters,
+      auditLogs,
     });
   };
 }
